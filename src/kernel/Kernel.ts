@@ -1,6 +1,7 @@
 import { PriorityQueue } from "./PriorityQueue";
 import { Message, MsgType } from "../messages/types";
 import { OrderBook } from "../orderbook/OrderBook";
+import type { LatencyModel } from "./LatencyModel";
 
 type AgentObj = {
   id: number;
@@ -26,17 +27,21 @@ export class Kernel {
 
   public exchangeId!: number;
 
-  // хуки
   public onTick?: (tNs: number) => void;
 
-  // глобальный шлейф событий
   private listeners: Map<string, Set<Listener>> = new Map();
 
-  constructor(opts: { tickMs?: number } = {}) {
+  private latency: LatencyModel | undefined;
+
+  constructor(opts: { tickMs?: number; latency?: LatencyModel | undefined } = {}) {
     this.wallTickMs = opts.tickMs ?? 200;
+    this.latency = opts.latency;
   }
 
-  // event bus
+  setLatency(l: LatencyModel) {
+    this.latency = l;
+  }
+
   on(type: string, fn: Listener) {
     if (!this.listeners.has(type)) this.listeners.set(type, new Set());
     this.listeners.get(type)!.add(fn);
@@ -55,7 +60,7 @@ export class Kernel {
 
   addExchange(e: AgentObj & { book: OrderBook }) {
     this.exchangeId = e.id;
-    this.books.set(e["book"]["symbol"], e["book"]);
+    this.books.set(e.book.symbol, e.book);
     this.addAgent(e);
   }
 
@@ -67,12 +72,15 @@ export class Kernel {
     return this.timeNs;
   }
 
-  // API ядра
   send(from: number, to: number, type: MsgType, body?: any, delayNs = 0) {
-    this.q.push({ from, to, type, body, at: this.timeNs + delayNs });
-    // для телеметрии входящих ордеров
+    const compute = to === this.exchangeId && from !== this.exchangeId ? this.latency?.computeNs?.(to) ?? 0 : 0;
+
+    const net = this.latency?.delayNs(from, to) ?? 0;
+
+    this.q.push({ from, to, type, body, at: this.nowNs() + net + compute + delayNs });
+
     if (type === MsgType.LIMIT_ORDER || type === MsgType.MARKET_ORDER || type === MsgType.CANCEL_ORDER || type === MsgType.MODIFY_ORDER) {
-      this.emit({ type: MsgType.ORDER_LOG, ts: this.timeNs, from, to, msgType: type, body });
+      this.emit({ type: MsgType.ORDER_LOG, ts: this.nowNs(), from, to, msgType: type, body });
     }
   }
 
@@ -80,11 +88,16 @@ export class Kernel {
     this.q.push({ from: -1, to: agentId, type: MsgType.WAKEUP, at: atNs });
   }
 
-  broadcast(type: MsgType, body: any) {
-    this.agents.forEach((a) => this.q.push({ from: this.exchangeId, to: a.id, type, body, at: this.timeNs }));
+  broadcast(type: MsgType, body: any, extraDelayNs = 0) {
+    const from = this.exchangeId;
+    for (const a of this.agents) {
+      const to = a.id;
+      if (to === from) continue;
+      const net = this.latency?.delayNs(from, to) ?? 0;
+      this.q.push({ from, to, type, body, at: this.nowNs() + net + extraDelayNs });
+    }
   }
 
-  // выполнение
   start(startNs = 0) {
     this.timeNs = startNs;
     this.agents.forEach((a) => a.kernelStarting(this.timeNs));
@@ -104,16 +117,13 @@ export class Kernel {
   }
 
   private tick() {
-    // продвигаем сим-время
     this.timeNs += this.wallTickMs * NS_PER_MS;
 
-    // доставляем все события «до сейчас»
     while (this.q.length && this.q.peek()!.at <= this.timeNs) {
       const m = this.q.pop()!;
       this.deliver(m);
     }
 
-    // пост-тик хук
     this.onTick?.(this.timeNs);
   }
 }

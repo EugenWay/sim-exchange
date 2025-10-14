@@ -29,12 +29,10 @@ export type Message<T = any> = {
   body?: T;
 };
 
-/** Пэйлоад для ORDER_EXECUTED */
 export type ExecutedBody = {
   symbol: string;
   price: number;
   qty: number;
   role: "MAKER" | "TAKER";
-  /** BUY/SELL именно для получателя этого сообщения */
   sideForRecipient: "BUY" | "SELL";
 };

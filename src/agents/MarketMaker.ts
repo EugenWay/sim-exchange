@@ -5,9 +5,9 @@ import { LimitOrder } from "../util/types";
 
 export class MarketMaker extends Agent {
   rng = new RNG();
-  wakeFreqNs = 50_000_000; // 50ms сим-времени
-  targetSpread = 100; // 1.00$ в центах
-  levelQty = 200; // объём на уровнь
+  wakeFreqNs = 50_000_000;
+  targetSpread = 100;
+  levelQty = 200;
   levels = 3;
 
   constructor(id: number, public symbol: string) {

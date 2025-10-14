@@ -18,15 +18,11 @@ export class ExchangeAgent extends Agent {
         const o = msg.body as LimitOrder;
         const execs = this.book.placeLimit(o);
 
-        // приняли
         this.send(msg.from, MsgType.ORDER_ACCEPTED, { orderId: o.id, symbol: o.symbol, side: o.side, price: o.price, qty: o.qty }, this.pipelineDelay);
 
-        // исполнения
         execs.forEach((e) => {
-          const makerSide = (o.side === "BUY" ? "SELL" : "BUY") as Side; // maker стоит на противоположной стороне
-          // TAKER = отправитель лимитки
+          const makerSide = (o.side === "BUY" ? "SELL" : "BUY") as Side;
           this.send(o.agent, MsgType.ORDER_EXECUTED, { symbol: this.symbol, price: e.price, qty: e.qty, role: "TAKER", sideForRecipient: o.side }, this.pipelineDelay);
-          // MAKER = тот, кто уже стоял в книге
           this.send(e.maker, MsgType.ORDER_EXECUTED, { symbol: this.symbol, price: e.price, qty: e.qty, role: "MAKER", sideForRecipient: makerSide }, this.pipelineDelay);
 
           this.kernel.emit({

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { Command } from "commander";
 import { Kernel } from "./kernel/Kernel";
 import { ExchangeAgent } from "./agents/ExchangeAgent";
@@ -9,9 +8,11 @@ import { nowNs, fromNow } from "./util/time";
 import { CsvLog } from "./util/csvlog";
 import { MsgType } from "./messages/types";
 import { startApi } from "./server/api";
+import { TwoStageRpcLatency } from "./kernel/LatencyModel";
 
 const program = new Command();
-program.option("-s, --symbol <sym>", "symbol", "BTC-USDT").option("--dur <ms>", "duration in ms", "60000").option("--tick <ms>", "tick interval in ms", "200").option("--mm <n>", "market makers", "3").option("--noise <n>", "noise takers", "10").option("--port <n>", "http port", "3000").option("--log-dir <path>", "csv log dir", "./logs");
+program.option("-s, --symbol <sym>", "symbol", "BTC-USDT").option("--dur <ms>", "duration in ms", "60000").option("--tick <ms>", "tick interval in ms", "200").option("--mm <n>", "market makers", "3").option("--noise <n>", "noise takers", "10").option("--port <n>", "http port", "3000").option("--log-dir <path>", "csv log dir", "./logs").option("--rpc-up <ms>", "rpc up ms", "200").option("--rpc-down <ms>", "rpc down ms", "200").option("--compute <ms>", "compute ms", "300").option("--down-jitter <ms>", "down jitter ms", "0");
+
 program.parse();
 const opts = program.opts();
 
@@ -23,25 +24,32 @@ const NOISE_N = parseInt(opts.noise, 10);
 const PORT = parseInt(opts.port, 10);
 const LOG_DIR = String(opts.logDir);
 
+const RPC_UP = parseInt(opts.rpcUp, 10);
+const RPC_DOWN = parseInt(opts.rpcDown, 10);
+const COMPUTE = parseInt(opts.compute, 10);
+const DOWN_JITTER = parseInt(opts.downJitter, 10);
+
 // время
 const start = nowNs();
 const stop = fromNow(DURATION_MS);
 
-// ядро
-const kernel = new Kernel({ tickMs: TICK_MS });
+let kernel: Kernel;
+const getExchangeId = () => kernel.exchangeId;
 
-// биржа
+kernel = new Kernel({
+  tickMs: TICK_MS,
+  latency: new TwoStageRpcLatency(getExchangeId, RPC_UP, RPC_DOWN, COMPUTE, DOWN_JITTER),
+});
+
 const exch = new ExchangeAgent(0, SYMBOL);
 kernel.addExchange(exch);
 
-// агенты
 for (let i = 0; i < MM_N; i++) kernel.addAgent(new MarketMaker(1 + i, SYMBOL));
 for (let i = 0; i < NOISE_N; i++) kernel.addAgent(new NoiseTaker(1 + MM_N + i, SYMBOL));
 const HUMAN_ID = 1 + MM_N + NOISE_N;
 const human = new HumanTrader(HUMAN_ID, SYMBOL, "HUMAN");
 kernel.addAgent(human);
 
-// CSV-логгеры
 const ordersCsv = new CsvLog(`${LOG_DIR}/orders.csv`);
 const tradesCsv = new CsvLog(`${LOG_DIR}/trades.csv`);
 
@@ -71,9 +79,7 @@ kernel.on(MsgType.TRADE, (e) => {
   });
 });
 
-// живой вывод стакана раз в тик + пуш маркет-даты по WS (не слишком часто)
 const DEPTH = 5;
-
 function fmtPx(p: number | null | undefined) {
   return p == null ? "-" : (p / 100).toFixed(2);
 }
@@ -92,7 +98,7 @@ kernel.onTick = () => {
   const spread = bestBid && bestAsk ? bestAsk[0] - bestBid[0] : null;
 
   console.clear();
-  console.log(`t=${kernel.nowNs()}  ${SYMBOL}  last=${fmtPx(snap.last)}  bid=${fmtLvl(bestBid as any)}  ask=${fmtLvl(bestAsk as any)}  spread=${spread ?? "-"}`);
+  console.log(`t=${kernel.nowNs()}  ${SYMBOL}  last=${fmtPx(snap.last)}  ` + `bid=${fmtLvl(bestBid as any)}  ask=${fmtLvl(bestAsk as any)}  spread=${spread ?? "-"}`);
   console.log("\n   BID (price × qty)         |     ASK (price × qty)");
   const rows = Math.max(DEPTH, snap.bids.length, snap.asks.length);
   for (let i = 0; i < rows; i++) {
@@ -101,7 +107,6 @@ kernel.onTick = () => {
     console.log(` ${b}|  ${a}`);
   }
 
-  // пушим MARKET_DATA через kernel.emit, чтобы WS поднял
   const json = JSON.stringify({ type: "md", symbol: SYMBOL, ...snap });
   if (json !== lastSnapJson) {
     kernel.emit({ type: MsgType.MARKET_DATA, symbol: SYMBOL, ...snap });
@@ -109,14 +114,11 @@ kernel.onTick = () => {
   }
 };
 
-// API/WS
 startApi(kernel, { port: PORT, humanAgent: human });
 
-// запуск
-console.log(`Starting sim for ${SYMBOL} with ${MM_N} MM & ${NOISE_N} noise takers (tick=${TICK_MS}ms, dur=${DURATION_MS}ms)`);
+console.log(`Starting sim for ${SYMBOL} with ${MM_N} MM & ${NOISE_N} noise takers ` + `(tick=${TICK_MS}ms, dur=${DURATION_MS}ms, up=${RPC_UP}ms, down=${RPC_DOWN}ms, compute=${COMPUTE}ms, jitter=${DOWN_JITTER}ms)`);
 kernel.start(start);
 
-// авто-стоп
 setTimeout(() => {
   kernel.stop();
   console.log("\nSimulation stopped.");

@@ -1,4 +1,3 @@
-// Минимальная PQ по времени доставки
 export class PriorityQueue<T extends { at: number }> {
   private a: T[] = [];
   push(x: T) {

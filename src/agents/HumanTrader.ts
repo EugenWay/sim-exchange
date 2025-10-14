@@ -7,8 +7,7 @@ export class HumanTrader extends Agent {
     super(id, `${nameLabel}#${id}`);
   }
 
-  // простейший портфель
-  cash = 1_000_000_00; // 1M USDT центов для примера
+  cash = 1_000_000_00;
   pos: Record<string, number> = Object.create(null);
 
   // REST/API будет вызывать это:
