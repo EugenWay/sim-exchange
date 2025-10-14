@@ -14,6 +14,7 @@ export enum MsgType {
   ORDER_ACCEPTED = "ORDER_ACCEPTED",
   ORDER_EXECUTED = "ORDER_EXECUTED",
   ORDER_CANCELLED = "ORDER_CANCELLED",
+  ORDER_REJECTED = "ORDER_REJECTED",
 
   TRADE = "TRADE",
   ORDER_LOG = "ORDER_LOG",
@@ -35,4 +36,10 @@ export type ExecutedBody = {
   qty: number;
   role: "MAKER" | "TAKER";
   sideForRecipient: "BUY" | "SELL";
+};
+
+export type RejectBody = {
+  reason: string;
+  refType: MsgType;
+  ref?: any;
 };
