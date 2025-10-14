@@ -9,7 +9,6 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
   const port = opts.port ?? 3000;
   const human = opts.humanAgent;
 
-  // --- HTTP ---
   app.get("/book/:symbol", (_req, reply) => {
     const symbol = (_req.params as any).symbol;
     const snap = kernel.getBook(symbol)?.snapshot(20);
@@ -20,7 +19,15 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
     reply.send(human?.getBalances() ?? {});
   });
 
-  app.post<{ Body: { type: "LIMIT" | "MARKET"; symbol: string; side: Side; price?: number; qty: number } }>("/order", async (req, reply) => {
+  app.post<{
+    Body: {
+      type: "LIMIT" | "MARKET";
+      symbol: string;
+      side: Side;
+      price?: number;
+      qty: number;
+    };
+  }>("/order", async (req, reply) => {
     const { type, symbol, side, price, qty } = req.body;
     if (!human) return reply.code(400).send({ error: "human agent not configured" });
     if (symbol !== human.symbol) return reply.code(400).send({ error: "symbol mismatch" });
@@ -35,10 +42,34 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
     }
   });
 
+  app.post<{ Body: { id: string } }>("/order/cancel", (req, reply) => {
+    const { id } = req.body;
+    if (!human) return reply.code(400).send({ error: "human agent not configured" });
+    if (!id) return reply.code(400).send({ error: "id required" });
+
+    human.cancel(id);
+    reply.send({ ok: true, id });
+  });
+
+  app.post<{ Body: { id: string; price?: number; qty?: number } }>("/order/modify", (req, reply) => {
+    const { id, price, qty } = req.body;
+    if (!human) return reply.code(400).send({ error: "human agent not configured" });
+    if (!id) return reply.code(400).send({ error: "id required" });
+    if (price === undefined && qty === undefined) return reply.code(400).send({ error: "nothing to modify" });
+
+    const patch: { price?: number; qty?: number } = {};
+    if (price !== undefined) patch.price = price;
+    if (qty !== undefined) patch.qty = qty;
+
+    human.modify(id, patch);
+    reply.send({ ok: true, id, ...patch });
+  });
+
   // --- WS ---
+
   const wss = new WebSocketServer({ noServer: true });
 
-  // апгрейд
+  // апгрейд соединения
   const server = app.server;
   server.on("upgrade", (req, socket, head) => {
     if (req.url?.startsWith("/ws")) {
@@ -52,9 +83,9 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
 
   const broadcast = (obj: any) => {
     const data = JSON.stringify(obj);
-    wss.clients.forEach((c: any) => {
+    for (const c of wss.clients) {
       if (c.readyState === 1) c.send(data);
-    });
+    }
   };
 
   // подписки на события ядра

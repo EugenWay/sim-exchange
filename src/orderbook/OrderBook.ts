@@ -28,7 +28,7 @@ export class OrderBook {
     let remain = qty;
 
     while (remain > 0) {
-      if (book.length === 0) break; // ← ранний выход
+      if (book.length === 0) break;
       const top = book[0]!;
       const take = Math.min(remain, top.qty);
       execs.push({ price: top.price, qty: take, maker: top.agent });
@@ -40,12 +40,50 @@ export class OrderBook {
     return { filled: qty - remain, execs };
   }
 
+  cancel(orderId: string): { ok: boolean; side?: Side; price?: number; qty?: number } {
+    const rm = (arr: LimitOrder[]) => {
+      const i = arr.findIndex((o) => o.id === orderId);
+      if (i >= 0) {
+        const o = arr[i]!;
+        arr.splice(i, 1);
+        return { ok: true, side: o.side, price: o.price, qty: o.qty } as const;
+      }
+      return { ok: false } as const;
+    };
+    const r1 = rm(this.bids);
+    if (r1.ok) return r1;
+    return rm(this.asks);
+  }
+
+  modify(orderId: string, patch: { price?: number; qty?: number }) {
+    const fromBids = this.bids.find((x) => x.id === orderId);
+    const inBids = !!fromBids;
+    const order = fromBids ?? this.asks.find((x) => x.id === orderId);
+    if (!order) return { ok: false as const };
+
+    if (typeof patch.qty === "number") {
+      order.qty = Math.max(0, patch.qty);
+      if (order.qty === 0) {
+        // нулевая — это фактически отмена
+        if (inBids) this.bids = this.bids.filter((x) => x.id !== orderId);
+        else this.asks = this.asks.filter((x) => x.id !== orderId);
+        return { ok: true as const, order: undefined };
+      }
+    }
+    if (typeof patch.price === "number") {
+      order.price = patch.price;
+    }
+
+    this.sortBooks();
+    return { ok: true as const, order };
+  }
+
   private match() {
     const execs: { price: number; qty: number; maker: number; taker?: number }[] = [];
     while (this.bids.length && this.asks.length) {
       const bid = this.bids[0]!;
       const ask = this.asks[0]!;
-      if (bid.price < ask.price) break; // ← проверка цены до доступа
+      if (bid.price < ask.price) break;
 
       const price = bid.ts <= ask.ts ? bid.price : ask.price;
       const qty = Math.min(bid.qty, ask.qty);

@@ -37,7 +37,7 @@ export class ExchangeAgent extends Agent {
           });
         });
 
-        this.publish(); // MARKET_DATA
+        this.publish();
         break;
       }
 
@@ -49,9 +49,7 @@ export class ExchangeAgent extends Agent {
           res.execs.forEach((e) => {
             const makerSide = (side === "BUY" ? "SELL" : "BUY") as Side;
 
-            // TAKER = отправитель market
             this.send(msg.from, MsgType.ORDER_EXECUTED, { symbol: this.symbol, price: e.price, qty: e.qty, role: "TAKER", sideForRecipient: side }, this.pipelineDelay);
-            // MAKER = контрагент из книги
             this.send(e.maker, MsgType.ORDER_EXECUTED, { symbol: this.symbol, price: e.price, qty: e.qty, role: "MAKER", sideForRecipient: makerSide }, this.pipelineDelay);
 
             this.kernel.emit({
@@ -70,6 +68,51 @@ export class ExchangeAgent extends Agent {
         break;
       }
 
+      case MsgType.CANCEL_ORDER: {
+        const { id } = (msg.body ?? {}) as { id?: string };
+        if (!id) break;
+
+        const res = this.book.cancel(id);
+        this.send(msg.from, MsgType.ORDER_CANCELLED, { orderId: id, ok: res.ok, side: res.side, price: res.price, qty: res.qty }, this.pipelineDelay);
+
+        this.kernel.emit({
+          type: MsgType.ORDER_LOG,
+          ts: t,
+          from: msg.from,
+          to: this.id,
+          msgType: MsgType.CANCEL_ORDER,
+          body: { id, ok: res.ok },
+        });
+
+        this.publish();
+        break;
+      }
+
+      case MsgType.MODIFY_ORDER: {
+        const { id, price, qty } = (msg.body ?? {}) as { id?: string; price?: number; qty?: number };
+        if (!id) break;
+
+        const patch: { price?: number; qty?: number } = {};
+        if (price !== undefined) patch.price = price;
+        if (qty !== undefined) patch.qty = qty;
+
+        const res = this.book.modify(id, patch);
+
+        this.send(msg.from, MsgType.ORDER_ACCEPTED, { orderId: id, replaced: res.ok, ...patch }, this.pipelineDelay);
+
+        this.kernel.emit({
+          type: MsgType.ORDER_LOG,
+          ts: t,
+          from: msg.from,
+          to: this.id,
+          msgType: MsgType.MODIFY_ORDER,
+          body: { id, ...patch, ok: res.ok },
+        });
+
+        this.publish();
+        break;
+      }
+
       case MsgType.QUERY_SPREAD: {
         const snap = this.book.snapshot(msg.body?.depth ?? 5);
         this.send(msg.from, MsgType.QUERY_SPREAD, { symbol: this.symbol, ...snap });
@@ -81,10 +124,6 @@ export class ExchangeAgent extends Agent {
         break;
       }
     }
-  }
-
-  getSnapshot(depth = 5) {
-    return this.book.snapshot(depth);
   }
 
   private publish() {
