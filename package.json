@@ -1,0 +1,31 @@
+{
+  "name": "sim-exchange",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "scripts": {
+    "clean": "rimraf dist logs",
+    "build": "tsc -p tsconfig.json",
+    "dev": "ts-node src/run.ts",
+    "start": "node dist/run.js",
+    "sim": "ts-node src/run.ts --symbol BTC-USDT --tick 200 --dur 60000 --mm 3 --noise 10 --port 3000"
+  },
+  "dependencies": {
+    "commander": "^14.0.1",
+    "decimal.js": "^10.6.0",
+    "fastify": "^5.6.1",
+    "seedrandom": "^3.0.5",
+    "sorted-btree": "^1.8.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/commander": "^2.12.0",
+    "@types/node": "^24.7.0",
+    "@types/seedrandom": "^3.0.8",
+    "@types/ws": "^8.18.1",
+    "rimraf": "^6.0.1",
+    "vitest": "^3.2.4"
+  }
+}
