@@ -65,11 +65,8 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
     reply.send({ ok: true, id, ...patch });
   });
 
-  // --- WS ---
-
   const wss = new WebSocketServer({ noServer: true });
 
-  // апгрейд соединения
   const server = app.server;
   server.on("upgrade", (req, socket, head) => {
     if (req.url?.startsWith("/ws")) {
@@ -88,9 +85,9 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
     }
   };
 
-  // подписки на события ядра
   kernel.on(MsgType.TRADE, (ev) => broadcast({ channel: "trade", event: ev }));
   kernel.on(MsgType.ORDER_LOG, (ev) => broadcast({ channel: "order", event: ev }));
+  kernel.on(MsgType.MARKET_DATA, (ev) => broadcast({ channel: "book", event: ev }));
 
   app.listen({ port, host: "0.0.0.0" }, () => {
     console.log(`[api] http://localhost:${port}  (WS: /ws)`);

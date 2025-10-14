@@ -128,6 +128,9 @@ export class ExchangeAgent extends Agent {
 
   private publish() {
     const snap = this.book.snapshot(10);
-    this.kernel.broadcast(MsgType.MARKET_DATA, { symbol: this.book.symbol, ...snap });
+    this.kernel.broadcast(MsgType.MARKET_DATA, {
+      symbol: this.book.symbol,
+      ...snap,
+    });
   }
 }

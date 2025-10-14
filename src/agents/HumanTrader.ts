@@ -13,16 +13,16 @@ export class HumanTrader extends Agent {
   placeLimit(price: number, qty: number, side: Side) {
     const ts = this.kernel.nowNs();
     const order = { id: `H-${ts}`, agent: this.id, symbol: this.symbol, side, price, qty, ts };
-    this.send(this.kernel["exchangeId"], MsgType.LIMIT_ORDER, order);
+    this.send(this.kernel.exchangeId, MsgType.LIMIT_ORDER, order);
     return order.id;
   }
 
   placeMarket(qty: number, side: Side) {
-    this.send(this.kernel["exchangeId"], MsgType.MARKET_ORDER, { side, qty });
+    this.send(this.kernel.exchangeId, MsgType.MARKET_ORDER, { side, qty });
   }
 
   cancel(id: string) {
-    this.send(this.kernel["exchangeId"], MsgType.CANCEL_ORDER, { id });
+    this.send(this.kernel.exchangeId, MsgType.CANCEL_ORDER, { id });
   }
   modify(id: string, patch: { price?: number; qty?: number }) {
     const body: { id: string; price?: number; qty?: number } = { id };
