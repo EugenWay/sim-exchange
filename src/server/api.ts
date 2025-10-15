@@ -19,15 +19,12 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
     reply.send(human?.getBalances() ?? {});
   });
 
-  app.post<{
-    Body: {
-      type: "LIMIT" | "MARKET";
-      symbol: string;
-      side: Side;
-      price?: number;
-      qty: number;
-    };
-  }>("/order", async (req, reply) => {
+  app.get("/orders", (_req, reply) => {
+    if (!human) return reply.send([]);
+    reply.send(human.listOpen());
+  });
+
+  app.post<{ Body: { type: "LIMIT" | "MARKET"; symbol: string; side: Side; price?: number; qty: number } }>("/order", async (req, reply) => {
     const { type, symbol, side, price, qty } = req.body;
     if (!human) return reply.code(400).send({ error: "human agent not configured" });
     if (symbol !== human.symbol) return reply.code(400).send({ error: "symbol mismatch" });
@@ -42,31 +39,23 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
     }
   });
 
-  app.post<{ Body: { id: string } }>("/order/cancel", (req, reply) => {
-    const { id } = req.body;
+  app.patch<{ Params: { id: string }; Body: { price?: number; qty?: number } }>("/order/:id", async (req, reply) => {
     if (!human) return reply.code(400).send({ error: "human agent not configured" });
-    if (!id) return reply.code(400).send({ error: "id required" });
+    const { id } = req.params;
+    const { price, qty } = req.body ?? {};
+    human.modify(id, { price, qty });
+    reply.send({ ok: true });
+  });
 
+  app.delete<{ Params: { id: string } }>("/order/:id", async (req, reply) => {
+    if (!human) return reply.code(400).send({ error: "human agent not configured" });
+    const { id } = req.params;
     human.cancel(id);
-    reply.send({ ok: true, id });
+    reply.send({ ok: true });
   });
 
-  app.post<{ Body: { id: string; price?: number; qty?: number } }>("/order/modify", (req, reply) => {
-    const { id, price, qty } = req.body;
-    if (!human) return reply.code(400).send({ error: "human agent not configured" });
-    if (!id) return reply.code(400).send({ error: "id required" });
-    if (price === undefined && qty === undefined) return reply.code(400).send({ error: "nothing to modify" });
-
-    const patch: { price?: number; qty?: number } = {};
-    if (price !== undefined) patch.price = price;
-    if (qty !== undefined) patch.qty = qty;
-
-    human.modify(id, patch);
-    reply.send({ ok: true, id, ...patch });
-  });
-
+  // --- WS ---
   const wss = new WebSocketServer({ noServer: true });
-
   const server = app.server;
   server.on("upgrade", (req, socket, head) => {
     if (req.url?.startsWith("/ws")) {
@@ -77,17 +66,16 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
       socket.destroy();
     }
   });
-
   const broadcast = (obj: any) => {
     const data = JSON.stringify(obj);
-    for (const c of wss.clients) {
+    wss.clients.forEach((c: any) => {
       if (c.readyState === 1) c.send(data);
-    }
+    });
   };
 
   kernel.on(MsgType.TRADE, (ev) => broadcast({ channel: "trade", event: ev }));
   kernel.on(MsgType.ORDER_LOG, (ev) => broadcast({ channel: "order", event: ev }));
-  kernel.on(MsgType.MARKET_DATA, (ev) => broadcast({ channel: "book", event: ev }));
+  kernel.on(MsgType.ORDER_REJECTED, (ev) => broadcast({ channel: "reject", event: ev }));
 
   app.listen({ port, host: "0.0.0.0" }, () => {
     console.log(`[api] http://localhost:${port}  (WS: /ws)`);
