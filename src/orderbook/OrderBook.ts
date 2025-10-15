@@ -2,7 +2,6 @@ import { L2Level, LimitOrder, Side } from "../util/types";
 
 export class OrderBook {
   symbol: string;
-  // bids: по убыванию цены; asks: по возрастанию
   private bids: LimitOrder[] = [];
   private asks: LimitOrder[] = [];
   last: number | null = null;
@@ -55,27 +54,42 @@ export class OrderBook {
     return rm(this.asks);
   }
 
-  modify(orderId: string, patch: { price?: number; qty?: number }) {
-    const fromBids = this.bids.find((x) => x.id === orderId);
-    const inBids = !!fromBids;
-    const order = fromBids ?? this.asks.find((x) => x.id === orderId);
-    if (!order) return { ok: false as const };
+  // if price changed — reset priority (ts = nowTs), and resort
+  modify(orderId: string, patch: { price?: number; qty?: number }, nowTs?: number) {
+    const idxB = this.bids.findIndex((x) => x.id === orderId);
+    const idxA = idxB === -1 ? this.asks.findIndex((x) => x.id === orderId) : -1;
+    const inBids = idxB >= 0;
+    const arr = inBids ? this.bids : this.asks;
+    const i = inBids ? idxB : idxA;
+    if (i < 0) return { ok: false as const };
+
+    const order = arr[i]!;
+    const priceChanged = typeof patch.price === "number" && patch.price !== order.price;
 
     if (typeof patch.qty === "number") {
       order.qty = Math.max(0, patch.qty);
       if (order.qty === 0) {
-        // нулевая — это фактически отмена
-        if (inBids) this.bids = this.bids.filter((x) => x.id !== orderId);
-        else this.asks = this.asks.filter((x) => x.id !== orderId);
+        arr.splice(i, 1);
         return { ok: true as const, order: undefined };
       }
     }
     if (typeof patch.price === "number") {
-      order.price = patch.price;
+      order.price = patch.price!;
+    }
+
+    if (priceChanged && typeof nowTs === "number") {
+      order.ts = nowTs;
     }
 
     this.sortBooks();
     return { ok: true as const, order };
+  }
+
+  listOpenOrders(filter?: { agent?: number }) {
+    const mapOrder = (o: LimitOrder) => ({ id: o.id, agent: o.agent, side: o.side, price: o.price, qty: o.qty, ts: o.ts });
+    let all = [...this.bids.map(mapOrder), ...this.asks.map(mapOrder)];
+    if (typeof filter?.agent === "number") all = all.filter((o) => o.agent === filter.agent);
+    return all;
   }
 
   private match() {
