@@ -88,8 +88,15 @@ const HUMAN_ID = nextId;
 const human = new HumanTrader(HUMAN_ID, SYMBOL, "HUMAN");
 kernel.addAgent(human);
 
-const ordersCsv = new CsvLog(`${LOG_DIR}/orders.csv`);
-const tradesCsv = new CsvLog(`${LOG_DIR}/trades.csv`);
+const ordersCsv = new CsvLog(`${LOG_DIR}/orders.csv`, {
+  truncate: true,
+  header: ["ts", "from", "to", "msgType", "symbol", "side", "price", "qty", "orderId"],
+});
+
+const tradesCsv = new CsvLog(`${LOG_DIR}/trades.csv`, {
+  truncate: true,
+  header: ["ts", "symbol", "price", "qty", "maker", "taker", "makerSide"],
+});
 
 kernel.on(MsgType.ORDER_LOG, (e) => {
   ordersCsv.write({
