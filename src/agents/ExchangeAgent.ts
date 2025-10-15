@@ -12,7 +12,8 @@ export class ExchangeAgent extends Agent {
   }
 
   private reject(to: number, refType: MsgType, reason: string, ref?: any) {
-    const body: RejectBody = { reason, refType, ref };
+    const id = typeof ref === "object" && ref ? (ref.id as string | undefined) : undefined;
+    const body: RejectBody & { id?: string } = { reason, refType, ref, ...(id ? { id } : {}) };
     this.send(to, MsgType.ORDER_REJECTED, body);
   }
 
