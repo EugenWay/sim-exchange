@@ -39,8 +39,22 @@ export class ExchangeAgent extends Agent {
 
         execs.forEach((e) => {
           const makerSide = (o.side === "BUY" ? "SELL" : "BUY") as Side;
-          this.send(o.agent, MsgType.ORDER_EXECUTED, { symbol: this.symbol, price: e.price, qty: e.qty, role: "TAKER", sideForRecipient: o.side });
-          this.send(e.maker, MsgType.ORDER_EXECUTED, { symbol: this.symbol, price: e.price, qty: e.qty, role: "MAKER", sideForRecipient: makerSide });
+          this.send(o.agent, MsgType.ORDER_EXECUTED, {
+            symbol: this.symbol,
+            price: e.price,
+            qty: e.qty,
+            role: "TAKER",
+            sideForRecipient: o.side,
+            orderId: o.id,
+          });
+          this.send(e.maker, MsgType.ORDER_EXECUTED, {
+            symbol: this.symbol,
+            price: e.price,
+            qty: e.qty,
+            role: "MAKER",
+            sideForRecipient: makerSide,
+            orderId: e.makerOrderId,
+          });
 
           this.kernel.emit({ type: MsgType.TRADE, ts: t, symbol: this.symbol, price: e.price, qty: e.qty, maker: e.maker, taker: o.agent, makerSide });
         });
@@ -65,8 +79,21 @@ export class ExchangeAgent extends Agent {
         if (res.filled > 0) {
           res.execs.forEach((e) => {
             const makerSide = (side === "BUY" ? "SELL" : "BUY") as Side;
-            this.send(msg.from, MsgType.ORDER_EXECUTED, { symbol: this.symbol, price: e.price, qty: e.qty, role: "TAKER", sideForRecipient: side });
-            this.send(e.maker, MsgType.ORDER_EXECUTED, { symbol: this.symbol, price: e.price, qty: e.qty, role: "MAKER", sideForRecipient: makerSide });
+            this.send(msg.from, MsgType.ORDER_EXECUTED, {
+              symbol: this.symbol,
+              price: e.price,
+              qty: e.qty,
+              role: "TAKER",
+              sideForRecipient: side,
+            });
+            this.send(e.maker, MsgType.ORDER_EXECUTED, {
+              symbol: this.symbol,
+              price: e.price,
+              qty: e.qty,
+              role: "MAKER",
+              sideForRecipient: makerSide,
+              orderId: e.makerOrderId,
+            });
             this.kernel.emit({ type: MsgType.TRADE, ts: t, symbol: this.symbol, price: e.price, qty: e.qty, maker: e.maker, taker: msg.from, makerSide });
           });
         } else {

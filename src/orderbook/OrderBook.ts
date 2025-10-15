@@ -23,14 +23,14 @@ export class OrderBook {
 
   placeMarket(agent: number, side: Side, qty: number, ts: number) {
     const book = side === "BUY" ? this.asks : this.bids;
-    const execs: { price: number; qty: number; maker: number }[] = [];
+    const execs: { price: number; qty: number; maker: number; makerOrderId?: string }[] = [];
     let remain = qty;
 
     while (remain > 0) {
       if (book.length === 0) break;
       const top = book[0]!;
       const take = Math.min(remain, top.qty);
-      execs.push({ price: top.price, qty: take, maker: top.agent });
+      execs.push({ price: top.price, qty: take, maker: top.agent, makerOrderId: top.id });
       top.qty -= take;
       remain -= take;
       this.last = top.price;
@@ -93,7 +93,7 @@ export class OrderBook {
   }
 
   private match() {
-    const execs: { price: number; qty: number; maker: number; taker?: number }[] = [];
+    const execs: { price: number; qty: number; maker: number; taker?: number; makerOrderId?: string; takerOrderId?: string }[] = [];
     while (this.bids.length && this.asks.length) {
       const bid = this.bids[0]!;
       const ask = this.asks[0]!;
@@ -104,7 +104,14 @@ export class OrderBook {
       bid.qty -= qty;
       ask.qty -= qty;
       this.last = price;
-      execs.push({ price, qty, maker: ask.agent, taker: bid.agent });
+      execs.push({
+        price,
+        qty,
+        maker: ask.agent,
+        taker: bid.agent,
+        makerOrderId: ask.id,
+        takerOrderId: bid.id,
+      });
       if (bid.qty === 0) this.bids.shift();
       if (ask.qty === 0) this.asks.shift();
     }

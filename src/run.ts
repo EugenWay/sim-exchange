@@ -44,9 +44,7 @@ const RPC_DOWN = parseInt(opts.rpcDown, 10);
 const COMPUTE = parseInt(opts.compute, 10);
 const DOWN_JITTER = parseInt(opts.downJitter, 10);
 
-// время
 const start = nowNs();
-const stop = fromNow(DURATION_MS);
 
 let kernel: Kernel;
 const getExchangeId = () => kernel.exchangeId;
@@ -122,6 +120,21 @@ kernel.on(MsgType.TRADE, (e) => {
     taker: e.taker,
     makerSide: e.makerSide,
   });
+});
+
+kernel.on(MsgType.ORDER_REJECTED, (e) => {
+  ordersCsv.write({
+    ts: kernel.nowNs(),
+    from: e.from ?? -1,
+    to: e.to ?? kernel.exchangeId,
+    msgType: MsgType.ORDER_REJECTED,
+    symbol: e.ref?.symbol,
+    side: e.ref?.side,
+    price: e.ref?.price,
+    qty: e.ref?.qty,
+    orderId: e.ref?.id,
+    reason: e.reason,
+  } as any);
 });
 
 const DEPTH = 5;
