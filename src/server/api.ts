@@ -78,6 +78,7 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
   kernel.on(MsgType.ORDER_REJECTED, (ev) => broadcast({ channel: "reject", event: ev }));
 
   kernel.on(MsgType.MARKET_DATA, (ev) => broadcast({ channel: "md", event: ev }));
+  kernel.on(MsgType.ORACLE_TICK, (ev) => broadcast({ channel: "oracle", event: ev }));
 
   app.listen({ port, host: "0.0.0.0" }, () => {
     console.log(`[api] http://localhost:${port}  (WS: /ws)`);

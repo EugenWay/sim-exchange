@@ -5,7 +5,8 @@ import { MarketMaker } from "./agents/MarketMaker";
 import { NoiseTaker } from "./agents/NoiseTaker";
 import { HumanTrader } from "./agents/HumanTrader";
 import { TradeAgent } from "./agents/TradeAgent";
-import { nowNs, fromNow } from "./util/time";
+import { OracleAgent } from "./agents/OracleAgent";
+import { nowNs } from "./util/time";
 import { CsvLog } from "./util/csvlog";
 import { MsgType } from "./messages/types";
 import { startApi } from "./server/api";
@@ -25,7 +26,25 @@ program
   .option("--rpc-up <ms>", "rpc up ms", "200")
   .option("--rpc-down <ms>", "rpc down ms", "200")
   .option("--compute <ms>", "compute ms (at exchange)", "300")
-  .option("--down-jitter <ms>", "down jitter ms", "0");
+  .option("--down-jitter <ms>", "down jitter ms", "0")
+  // oracle knobs
+  .option("--oracle", "enable oracle agent", false)
+  .option("--oracle-mode <m>", "OU|JDM", "JDM")
+  .option("--oracle-dt <ms>", "oracle tick ms", "100")
+  // OU params
+  .option("--ou-r0 <cents>", "OU initial fundamental", "")
+  .option("--ou-mu <cents>", "OU long-run mean", "")
+  .option("--ou-kappa <per_s>", "OU mean reversion speed", "0.02")
+  .option("--ou-sigma <cents_per_sqrt_s>", "OU diffusion scale", "30")
+  .option("--ou-lambda <per_year>", "OU jump intensity (per year)", "0.05")
+  .option("--ou-jump-std <cents>", "OU jump std (cents)", "200")
+  // JDM params
+  .option("--jdm-s0 <cents>", "JDM initial price", "")
+  .option("--jdm-mu <per_year>", "JDM drift", "0.00")
+  .option("--jdm-sigma <per_sqrt_year>", "JDM vol", "0.60")
+  .option("--jdm-lambda <per_year>", "JDM jump intensity", "0.10")
+  .option("--jdm-muJ <log_mean>", "JDM log jump mean", "-0.20")
+  .option("--jdm-sigmaJ <log_std>", "JDM log jump std", "0.10");
 
 program.parse();
 const opts = program.opts();
@@ -62,24 +81,45 @@ for (let i = 0; i < NOISE_N; i++) kernel.addAgent(new NoiseTaker(1 + MM_N + i, S
 
 let nextId = 1 + MM_N + NOISE_N;
 
-// TradeAgents (простые трендфолловеры + пассивные котировки)
 for (let i = 0; i < TA_N; i++) {
   kernel.addAgent(
     new TradeAgent(nextId++, {
       symbol: SYMBOL,
-      // можно не трогать — есть дефолты:
-      // wakeFreqNs: 120_000_000,
-      // shortPeriod: 8,
-      // longPeriod: 21,
-      // thresholdBp: 6,
-      // signalQty: 25,
-      // passiveLevels: 2,
-      // passiveStep: 25,
-      // passiveQty: 50,
-      // orderTtlNs: 1_000_000_000,
-      // maxPosition: 5_000,
     })
   );
+}
+
+const ORACLE_ON = !!opts.oracle;
+if (ORACLE_ON) {
+  const mode = String(opts.oracleMode || "JDM").toUpperCase() as "OU" | "JDM";
+  const dtNs = parseInt(opts.oracleDt, 10) * 1_000_000;
+
+  const oracle =
+    mode === "OU"
+      ? new OracleAgent(nextId++, {
+          symbol: SYMBOL,
+          mode,
+          wakeFreqNs: dtNs,
+          r0: opts.ouR0 ? parseInt(opts.ouR0, 10) : undefined,
+          mu: opts.ouMu ? parseInt(opts.ouMu, 10) : undefined,
+          kappa: parseFloat(opts.ouKappa),
+          sigmaCents: parseFloat(opts.ouSigma),
+          lambdaAnn: parseFloat(opts.ouLambda),
+          jumpStdCents: parseFloat(opts.ouJumpStd),
+        } as any)
+      : new OracleAgent(nextId++, {
+          symbol: SYMBOL,
+          mode,
+          wakeFreqNs: dtNs,
+          s0: opts.jdmS0 ? parseInt(opts.jdmS0, 10) : undefined,
+          muAnn: parseFloat(opts.jdmMu),
+          sigmaAnn: parseFloat(opts.jdmSigma),
+          lambdaAnn: parseFloat(opts.jdmLambda),
+          muJ: parseFloat(opts.jdmMuJ),
+          sigmaJ: parseFloat(opts.jdmSigmaJ),
+        } as any);
+
+  kernel.addAgent(oracle);
 }
 
 const HUMAN_ID = nextId;
@@ -88,12 +128,17 @@ kernel.addAgent(human);
 
 const ordersCsv = new CsvLog(`${LOG_DIR}/orders.csv`, {
   truncate: true,
-  header: ["ts", "from", "to", "msgType", "symbol", "side", "price", "qty", "orderId"],
+  header: ["ts", "from", "to", "msgType", "symbol", "side", "price", "qty", "orderId", "reason"],
 });
 
 const tradesCsv = new CsvLog(`${LOG_DIR}/trades.csv`, {
   truncate: true,
   header: ["ts", "symbol", "price", "qty", "maker", "taker", "makerSide"],
+});
+
+const oracleCsv = new CsvLog(`${LOG_DIR}/oracle.csv`, {
+  truncate: true,
+  header: ["ts", "symbol", "mode", "fundamental", "drift", "diff", "jump", "mr"],
 });
 
 kernel.on(MsgType.ORDER_LOG, (e) => {
@@ -122,7 +167,7 @@ kernel.on(MsgType.TRADE, (e) => {
   });
 });
 
-kernel.on(MsgType.ORDER_REJECTED, (e) => {
+kernel.on(MsgType.ORDER_REJECTED, (e: any) => {
   ordersCsv.write({
     ts: kernel.nowNs(),
     from: e.from ?? -1,
@@ -135,6 +180,19 @@ kernel.on(MsgType.ORDER_REJECTED, (e) => {
     orderId: e.ref?.id,
     reason: e.reason,
   } as any);
+});
+
+kernel.on(MsgType.ORACLE_TICK, (e: any) => {
+  oracleCsv.write({
+    ts: e.ts,
+    symbol: e.symbol,
+    mode: e.mode,
+    fundamental: e.fundamental,
+    drift: e.lastStep?.drift,
+    diff: e.lastStep?.diff,
+    jump: e.lastStep?.jump ?? e.lastStep?.jumpLog,
+    mr: e.lastStep?.mr,
+  });
 });
 
 const DEPTH = 5;
@@ -174,7 +232,8 @@ kernel.onTick = () => {
 
 startApi(kernel, { port: PORT, humanAgent: human });
 
-console.log(`Starting sim for ${SYMBOL} with ${MM_N} MM, ${NOISE_N} noise, ${TA_N} TA ` + `(tick=${TICK_MS}ms, dur=${DURATION_MS}ms, up=${RPC_UP}ms, down=${RPC_DOWN}ms, compute=${COMPUTE}ms, jitter=${DOWN_JITTER}ms)`);
+console.log(`Starting sim for ${SYMBOL} with ${MM_N} MM, ${NOISE_N} noise, ${TA_N} TA` + ` (tick=${TICK_MS}ms, dur=${DURATION_MS}ms, up=${RPC_UP}ms, down=${RPC_DOWN}ms, compute=${COMPUTE}ms, jitter=${DOWN_JITTER}ms` + `, oracle=${ORACLE_ON ? opts.oracleMode : "off"})`);
+
 kernel.start(start);
 
 setTimeout(() => {

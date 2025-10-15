@@ -18,6 +18,7 @@ export enum MsgType {
 
   TRADE = "TRADE",
   ORDER_LOG = "ORDER_LOG",
+  ORACLE_TICK = "ORACLE_TICK",
 }
 
 export type AgentId = number;
