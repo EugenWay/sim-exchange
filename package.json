@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "dev": "ts-node src/run.ts",
     "start": "node dist/run.js",
-    "sim": "ts-node src/run.ts --config src/scenarios/demo.json"
+    "sim": "ts-node src/run.ts --config src/scenarios/demo.json",
+    "scenario": "ts-node src/run.ts --config src/scenarios/demo.json"
   },
   "dependencies": {
     "commander": "^14.0.1",

@@ -1,0 +1,103 @@
+{
+  "name": "test-scenario-15min",
+  "description": "Быстрый тест на 15 минут с бычьим паттерном",
+  "durationMs": 900000,
+  "tickMs": 200,
+  "logging": {
+    "enabled": true,
+    "dir": "./logs",
+    "orders": false,
+    "trades": true,
+    "oracle": true
+  },
+  "latency": {
+    "rpcUpMs": 0,
+    "rpcDownMs": 0,
+    "computeMs": 5,
+    "downJitterMs": 0
+  },
+  "symbols": [
+    {
+      "symbol": "BTC-USDT",
+      "agents": [
+        {
+          "type": "ScenarioOracle",
+          "count": 1,
+          "params": {
+            "scenario": {
+              "points": [
+                { "atSec": 0, "price": 40000, "volatility": 50, "event": "Start" },
+                { "atSec": 300, "price": 41000, "volatility": 70, "event": "Early pump" },
+                { "atSec": 600, "price": 40500, "volatility": 60, "event": "Pullback" },
+                { "atSec": 900, "price": 42000, "volatility": 80, "event": "Breakout" }
+              ],
+              "baseVolatility": 60,
+              "interpolation": "smooth"
+            },
+            "noiseScale": 0.4
+          }
+        },
+        {
+          "type": "WhaleAgent",
+          "count": 1,
+          "params": {
+            "strategy": "pump_dump",
+            "pumpQty": 20000,
+            "pumpDurationSec": 300,
+            "dumpDurationSec": 180,
+            "aggression": 0.85
+          }
+        },
+        {
+          "type": "MarketMaker",
+          "count": 2,
+          "params": {
+            "wakeFreqNs": 150000000,
+            "levels": 8,
+            "levelQty": 800,
+            "baseSpread": 70,
+            "alphaVol": 1.0,
+            "stepBetweenLevels": 25,
+            "priceHysteresisCents": 8,
+            "invSkewCentsPerQty": 0.002
+          }
+        },
+        {
+          "type": "NoiseTaker",
+          "count": 10,
+          "params": {
+            "freqNs": 170000000,
+            "smallMaxQty": 70,
+            "tailProb": 0.12,
+            "largeMinQty": 220,
+            "largeMaxQty": 600
+          }
+        },
+        {
+          "type": "ValueAgent",
+          "count": 2,
+          "params": {
+            "rBar": 40000,
+            "kappa": 0.05,
+            "sigmaN": 10000,
+            "sigmaS": 90000,
+            "lambdaA": 5.0,
+            "percentAggr": 0.2,
+            "size": 150,
+            "levels": 2,
+            "levelQty": 140
+          }
+        },
+        {
+          "type": "TradeAgent",
+          "count": 1,
+          "params": {
+            "thresholdBp": 7,
+            "signalQty": 120,
+            "wakeFreqNs": 140000000
+          }
+        }
+      ]
+    }
+  ]
+}
