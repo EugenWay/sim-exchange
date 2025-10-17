@@ -1,8 +1,14 @@
 import Fastify from "fastify";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import { Kernel } from "../kernel/Kernel";
 import { MsgType } from "../messages/types";
 import { Side } from "../util/types";
+
+type ClientSubscription = {
+  ws: WebSocket;
+  channels: Set<string>;
+  symbols: Set<string>;
+};
 
 export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any } = {}) {
   const app = Fastify();
@@ -54,9 +60,10 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
     reply.send({ ok: true });
   });
 
-  // --- WS ---
   const wss = new WebSocketServer({ noServer: true });
   const server = app.server;
+  const clients = new Map<WebSocket, ClientSubscription>();
+
   server.on("upgrade", (req, socket, head) => {
     if (req.url?.startsWith("/ws")) {
       wss.handleUpgrade(req, socket, head, (ws) => {
@@ -66,19 +73,86 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
       socket.destroy();
     }
   });
-  const broadcast = (obj: any) => {
-    const data = JSON.stringify(obj);
-    wss.clients.forEach((c: any) => {
-      if (c.readyState === 1) c.send(data);
+
+  wss.on("connection", (ws) => {
+    clients.set(ws, { ws, channels: new Set(), symbols: new Set() });
+
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        handleClientMessage(ws, msg);
+      } catch (e) {
+        ws.send(JSON.stringify({ error: "invalid message" }));
+      }
     });
-  };
 
-  kernel.on(MsgType.TRADE, (ev) => broadcast({ channel: "trade", event: ev }));
-  kernel.on(MsgType.ORDER_LOG, (ev) => broadcast({ channel: "order", event: ev }));
-  kernel.on(MsgType.ORDER_REJECTED, (ev) => broadcast({ channel: "reject", event: ev }));
+    ws.on("close", () => {
+      clients.delete(ws);
+    });
 
-  kernel.on(MsgType.MARKET_DATA, (ev) => broadcast({ channel: "md", event: ev }));
-  kernel.on(MsgType.ORACLE_TICK, (ev) => broadcast({ channel: "oracle", event: ev }));
+    ws.send(JSON.stringify({ type: "connected" }));
+  });
+
+  function handleClientMessage(ws: WebSocket, msg: any) {
+    const client = clients.get(ws);
+    if (!client) return;
+
+    if (msg.type === "subscribe") {
+      const { channel, symbol } = msg;
+      if (channel) client.channels.add(channel);
+      if (symbol) client.symbols.add(symbol);
+      ws.send(JSON.stringify({ type: "subscribed", channel, symbol }));
+    } else if (msg.type === "unsubscribe") {
+      const { channel, symbol } = msg;
+      if (channel) client.channels.delete(channel);
+      if (symbol) client.symbols.delete(symbol);
+      ws.send(JSON.stringify({ type: "unsubscribed", channel, symbol }));
+    }
+  }
+
+  function broadcast(channel: string, event: any) {
+    const data = JSON.stringify({ channel, event });
+    clients.forEach((client) => {
+      if (client.ws.readyState === 1 && client.channels.has(channel)) {
+        const symbol = event.symbol;
+        if (!symbol || client.symbols.size === 0 || client.symbols.has(symbol)) {
+          client.ws.send(data);
+        }
+      }
+    });
+  }
+
+  const bookThrottle = new Map<string, { timer?: NodeJS.Timeout; pending?: any }>();
+
+  function broadcastBook(symbol: string, snapshot: any) {
+    const key = symbol;
+    const state = bookThrottle.get(key) || {};
+
+    state.pending = snapshot;
+
+    if (!state.timer) {
+      state.timer = setTimeout(() => {
+        if (state.pending) {
+          broadcast("book", { symbol, ...state.pending });
+          state.pending = undefined;
+        }
+        state.timer = undefined;
+      }, 100);
+      bookThrottle.set(key, state);
+    }
+  }
+
+  kernel.on(MsgType.TRADE, (ev) => broadcast("trade", ev));
+  kernel.on(MsgType.ORDER_LOG, (ev) => broadcast("order", ev));
+  kernel.on(MsgType.ORDER_REJECTED, (ev) => broadcast("reject", ev));
+  kernel.on(MsgType.ORACLE_TICK, (ev) => broadcast("oracle", ev));
+
+  kernel.on(MsgType.MARKET_DATA, (ev) => {
+    broadcast("md", ev);
+    if (ev.symbol) {
+      broadcastBook(ev.symbol, { bids: ev.bids, asks: ev.asks, last: ev.last });
+    }
+  });
 
   app.listen({ port, host: "0.0.0.0" }, () => {
     console.log(`[api] http://localhost:${port}  (WS: /ws)`);

@@ -446,7 +446,70 @@ Channels:
 
 **Advantage of ticks:** Human sees consistent view. Without ticks, book would update asynchronously mid-decision.
 
----
+**Subscribe:**
+
+```javascript
+ws.send(
+  JSON.stringify({
+    type: "subscribe",
+    channel: "trade",
+    symbol: "BTC-USDT",
+  })
+);
+```
+
+**Receive:**
+
+```javascript
+{
+  "channel": "trade",
+  "event": {
+    "ts": 1234567890,
+    "symbol": "BTC-USDT",
+    "price": 40050,
+    "qty": 100,
+    "maker": 3,
+    "taker": 5,
+    "makerSide": "SELL"
+  }
+}
+```
+
+## Quick Example
+
+```javascript
+const ws = new WebSocket("ws://localhost:3000/ws");
+
+ws.onopen = () => {
+  ws.send(
+    JSON.stringify({
+      type: "subscribe",
+      channel: "trade",
+      symbol: "BTC-USDT",
+    })
+  );
+};
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.channel === "trade") {
+    console.log(`Trade: $${msg.event.price / 100} x ${msg.event.qty}`);
+  }
+};
+
+// Place order via REST
+fetch("http://localhost:3000/order", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    type: "LIMIT",
+    symbol: "BTC-USDT",
+    side: "BUY",
+    price: 40000,
+    qty: 100,
+  }),
+});
+```
 
 ## Configuration
 
