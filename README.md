@@ -16,6 +16,27 @@ A self-contained trading simulation platform that recreates a complete exchange 
 
 ---
 
+## Actor Model Architecture
+
+This simulation is built on the **Actor Model** - each agent is an independent entity with its own state, decision logic, and communication only through asynchronous message passing.
+
+**Why this fits blockchain naturally:**
+
+The actor model maps directly to decentralized execution:
+
+- Each agent has **private keys** and signs its own transactions
+- **No shared state** - order book lives in a smart contract, agents poll independently
+- **Message queue with delays** - all communication goes through a priority queue where messages are delivered at scheduled times. Adding real blockchain latency (RPC delays, confirmation times) doesn't break the architecture - messages are simply processed when they arrive
+- **Async by default** - agents already handle network latency and delayed responses
+- **Message passing** translates to transaction submission
+
+**Key design decisions:**
+
+- **Polling over events:** Exchange Agent caches order book state from the blockchain and broadcasts snapshots every tick (~200ms). This avoids event spam in high-frequency trading scenarios.
+- **Latency-tolerant:** The simulation already models network delays (uplink, processing, downlink). Transitioning to real blockchain infrastructure just replaces simulated delays with actual RPC/confirmation delays - the logic remains unchanged.
+- **External participation:** Human traders can interact directly with the blockchain contract via MetaMask while bots operate through the internal coordination layer - both see the same state.
+- **Production path:** The same architecture runs as simulation (in-memory order book) or against real blockchain infrastructure (on-chain smart contract) with minimal changes.
+
 ## Key Concepts
 
 ### Event-Driven Architecture
