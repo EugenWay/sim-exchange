@@ -134,9 +134,9 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
       state.timer = setTimeout(() => {
         if (state.pending) {
           broadcast("book", { symbol, ...state.pending });
-          state.pending = undefined;
+          delete state.pending;
         }
-        state.timer = undefined;
+        delete state.timer;
       }, 100);
       bookThrottle.set(key, state);
     }
@@ -148,7 +148,6 @@ export function startApi(kernel: Kernel, opts: { port?: number; humanAgent?: any
   kernel.on(MsgType.ORACLE_TICK, (ev) => broadcast("oracle", ev));
 
   kernel.on(MsgType.MARKET_DATA, (ev) => {
-    broadcast("md", ev);
     if (ev.symbol) {
       broadcastBook(ev.symbol, { bids: ev.bids, asks: ev.asks, last: ev.last });
     }

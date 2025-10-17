@@ -429,7 +429,7 @@ ws://localhost:3000/ws
 
 Channels:
 - "trade"  → every execution {price, qty, maker, taker, side}
-- "md"     → market data snapshots {symbol, bids, asks, last}
+- "book"     → market data snapshots {symbol, bids, asks, last}
 - "oracle" → fundamental value updates {ts, fundamental, mode}
 - "order"  → order logs (placements, cancels, modifies)
 - "reject" → order rejections {reason, refType}
