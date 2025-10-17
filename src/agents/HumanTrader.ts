@@ -7,7 +7,7 @@ export class HumanTrader extends Agent {
     super(id, `${nameLabel}#${id}`);
   }
 
-  cash = 1_000_000_00;
+  cash = 100_000_000_00;
   pos: Record<string, number> = Object.create(null);
   private openOrders = new Map<string, { id: string; symbol: string; side: Side; price: number; qty: number; ts: number }>();
 

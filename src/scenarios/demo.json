@@ -1,0 +1,108 @@
+{
+  "name": "stable-trendy",
+  "durationMs": 3600000,
+  "tickMs": 200,
+  "logging": { "enabled": false, "dir": "./logs", "orders": false, "trades": false, "oracle": true },
+  "latency": { "rpcUpMs": 0, "rpcDownMs": 0, "computeMs": 5, "downJitterMs": 0 },
+  "symbols": [
+    {
+      "symbol": "BTC-USDT",
+      "agents": [
+        {
+          "type": "MarketMaker",
+          "count": 2,
+          "params": {
+            "wakeFreqNs": 130000000,
+            "levels": 12,
+            "levelQty": 2400,
+            "baseSpread": 70,
+            "alphaVol": 0.9,
+            "stepBetweenLevels": 25,
+            "priceHysteresisCents": 6,
+            "invSkewCentsPerQty": 0.0015
+          }
+        },
+        {
+          "type": "MarketMaker",
+          "count": 1,
+          "params": {
+            "wakeFreqNs": 280000000,
+            "levels": 18,
+            "levelQty": 6500,
+            "baseSpread": 110,
+            "alphaVol": 0.8,
+            "stepBetweenLevels": 55,
+            "priceHysteresisCents": 8,
+            "invSkewCentsPerQty": 0.001
+          }
+        },
+        {
+          "type": "NoiseTaker",
+          "count": 10,
+          "params": {
+            "freqNs": 170000000,
+            "smallMaxQty": 70,
+            "tailProb": 0.1,
+            "largeMinQty": 220,
+            "largeMaxQty": 600
+          }
+        },
+        {
+          "type": "ValueAgent",
+          "count": 2,
+          "params": {
+            "rBar": 40000,
+            "kappa": 0.04,
+            "sigmaN": 8000,
+            "sigmaS": 80000,
+            "lambdaA": 4.0,
+            "percentAggr": 0.18,
+            "size": 160,
+            "depthSpread": 1.2,
+            "levels": 2,
+            "levelQty": 140,
+            "forecastHorizonSec": 180
+          }
+        },
+        {
+          "type": "TradeAgent",
+          "count": 1,
+          "params": {
+            "thresholdBp": 8,
+            "signalQty": 120,
+            "orderTtlNs": 900000000,
+            "passiveLevels": 2,
+            "passiveStep": 25,
+            "passiveQty": 120,
+            "wakeFreqNs": 140000000
+          }
+        },
+        {
+          "type": "OBIAgent",
+          "count": 1,
+          "params": {
+            "levels": 8,
+            "entryThreshold": 0.18,
+            "trailDist": 0.09,
+            "lotSize": 180,
+            "wakeFreqNs": 190000000
+          }
+        },
+        {
+          "type": "OracleAgent",
+          "count": 1,
+          "params": {
+            "mode": "JDM",
+            "wakeFreqNs": 150000000,
+            "s0": 40000,
+            "muAnn": 0.06,
+            "sigmaAnn": 0.45,
+            "lambdaAnn": 0.3,
+            "muJ": -0.05,
+            "sigmaJ": 0.18
+          }
+        }
+      ]
+    }
+  ]
+}

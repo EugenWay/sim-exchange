@@ -41,25 +41,23 @@ type OUOpts = BaseOpts & {
   r0?: number; // initial fundamental in cents
   mu?: number; // long-run mean in cents
   kappa?: number; // mean reversion speed (per second)
-  sigmaCents?: number; // diffusion scale in cents per sqrt(second)
-  lambdaAnn?: number; // intensity per year
-  jumpStdCents?: number; // jump size std (cents)
+  sigmaCents?: number; // diffusion scale (cents per sqrt(second))
+  lambdaAnn?: number; // jump intensity per year
+  jumpStdCents?: number;
 };
 
 type JDMOpts = BaseOpts & {
-  // GBM params (annualized)
   s0?: number; // initial price in cents
-  muAnn?: number; // drift per year (e.g. 0.05 for 5%)
-  sigmaAnn?: number; // vol per sqrt(year) (e.g. 0.8)
-  // Poisson jumps in log-space
-  lambdaAnn?: number; // intensity per year
-  muJ?: number; // mean of log-jump size
-  sigmaJ?: number; // std of log-jump size
+  muAnn?: number; // drift per year
+  sigmaAnn?: number; // vol per sqrt(year)
+  lambdaAnn?: number; // jump intensity per year
+  muJ?: number; // mean log-jump size
+  sigmaJ?: number; // std log-jump size
 };
 
 export type OracleOpts = OUOpts | JDMOpts;
 
-const SECONDS_PER_YEAR = 31_557_600; // Julian year (for annualization)
+const SECONDS_PER_YEAR = 31_557_600; // Julian year
 
 export class OracleAgent extends Agent {
   private symbol: string;
@@ -89,12 +87,14 @@ export class OracleAgent extends Agent {
 
     if (this.mode === "OU") {
       const o = opts as OUOpts;
-      this.r = Math.max(1, o.r0 ?? 40_000); // $400
+      this.r = Math.max(1, o.r0 ?? 40_000);
       this.muCents = Math.max(1, o.mu ?? this.r);
-      this.kappa = o.kappa ?? 0.02; // per second
+      this.kappa = o.kappa ?? 0.02;
       this.sigmaCentsPerSqrtSec = o.sigmaCents ?? 30;
       this.lambdaAnn = o.lambdaAnn ?? 0.05;
       this.jumpStdCents = o.jumpStdCents ?? 200;
+
+      // init JDM placeholders
       this.sCents = this.r;
       this.muAnn = 0;
       this.sigmaAnn = 0;
@@ -108,6 +108,8 @@ export class OracleAgent extends Agent {
       this.lambdaAnn = j.lambdaAnn ?? 0.1;
       this.muJ = j.muJ ?? -0.2;
       this.sigmaJ = j.sigmaJ ?? 0.1;
+
+      // init OU placeholders
       this.r = this.sCents;
       this.muCents = this.r;
       this.kappa = 0;
@@ -124,18 +126,17 @@ export class OracleAgent extends Agent {
     const dtSec = this.wakeFreqNs / 1_000_000_000;
     const dtYears = dtSec / SECONDS_PER_YEAR;
 
+    let body: any;
+
     if (this.mode === "OU") {
       const mr = this.kappa * (this.muCents - this.r) * dtSec;
       const diff = this.gauss(0, this.sigmaCentsPerSqrtSec * Math.sqrt(dtSec));
       const k = this.poisson(this.lambdaAnn * dtYears);
-      let jump = 0;
-      if (k > 0) {
-        jump = this.gauss(0, this.jumpStdCents * Math.sqrt(k));
-      }
+      const jump = k > 0 ? this.gauss(0, this.jumpStdCents * Math.sqrt(k)) : 0;
+
       this.r = Math.max(1, Math.round(this.r + mr + diff + jump));
 
-      this.kernel.emit({
-        type: MsgType.ORACLE_TICK,
+      body = {
         ts: t,
         symbol: this.symbol,
         mode: this.mode,
@@ -144,9 +145,9 @@ export class OracleAgent extends Agent {
         kappa: this.kappa,
         lambdaAnn: this.lambdaAnn,
         lastStep: { mr: Math.round(mr), diff: Math.round(diff), jump: Math.round(jump) },
-      });
+      };
     } else {
-      // JDM / Merton jump-diffusion (multiplicative, log space)
+      // JDM (Merton)
       const drift = (this.muAnn - 0.5 * this.sigmaAnn * this.sigmaAnn) * dtYears;
       const diff = this.sigmaAnn * Math.sqrt(dtYears) * this.gauss(0, 1);
       const k = this.poisson(this.lambdaAnn * dtYears);
@@ -155,8 +156,7 @@ export class OracleAgent extends Agent {
       const mult = Math.exp(drift + diff + jumpLog);
       this.sCents = Math.max(1, Math.round(this.sCents * mult));
 
-      this.kernel.emit({
-        type: MsgType.ORACLE_TICK,
+      body = {
         ts: t,
         symbol: this.symbol,
         mode: this.mode,
@@ -165,29 +165,33 @@ export class OracleAgent extends Agent {
         sigmaAnn: this.sigmaAnn,
         lambdaAnn: this.lambdaAnn,
         lastStep: { drift, diff, jumpLog },
-      });
+      };
     }
+
+    // 1) for logs/telemetry in run.ts
+    this.kernel.emit({ type: MsgType.ORACLE_TICK, ...body });
+
+    // 2) deliver to agents
+    this.kernel.broadcast(MsgType.ORACLE_TICK, body);
 
     this.setWakeup(t + this.wakeFreqNs);
   }
 
   // --- helpers --------------------------------------------------------------
 
-  // standard normal via Box–Muller
   private gauss(mean: number, std: number) {
-    if (std <= 0) return 0;
+    if (std <= 0) return mean;
     const u = 1 - Math.random();
     const v = 1 - Math.random();
     const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     return mean + std * z;
   }
 
-  // Poisson(λ) by Knuth (ok for small λ; здесь λ = lambdaAnn * dtYears обычно << 1)
   private poisson(lambda: number) {
     if (lambda <= 0) return 0;
     const L = Math.exp(-lambda);
-    let k = 0;
-    let p = 1;
+    let k = 0,
+      p = 1;
     do {
       k++;
       p *= Math.random();
