@@ -1,7 +1,7 @@
 {
-  "name": "test-scenario-15min",
-  "description": "Быстрый тест на 15 минут с бычьим паттерном",
-  "durationMs": 900000,
+  "name": "pumpdump-5m",
+  "description": "Oracle + Whale",
+  "durationMs": 300000,
   "tickMs": 200,
   "logging": {
     "enabled": true,
@@ -24,17 +24,18 @@
           "type": "ScenarioOracle",
           "count": 1,
           "params": {
+            "wakeFreqMs": 150,
+            "noiseScale": 0.4,
             "scenario": {
               "points": [
                 { "atSec": 0, "price": 40000, "volatility": 50, "event": "Start" },
-                { "atSec": 300, "price": 41000, "volatility": 70, "event": "Early pump" },
-                { "atSec": 600, "price": 40500, "volatility": 60, "event": "Pullback" },
-                { "atSec": 900, "price": 42000, "volatility": 80, "event": "Breakout" }
+                { "atSec": 150, "price": 41000, "volatility": 70, "event": "Pump window (oracle peak)" },
+                { "atSec": 240, "price": 41200, "volatility": 65, "event": "Plateau" },
+                { "atSec": 300, "price": 40800, "volatility": 70, "event": "Soft drift down" }
               ],
               "baseVolatility": 60,
               "interpolation": "smooth"
-            },
-            "noiseScale": 0.4
+            }
           }
         },
         {
@@ -42,10 +43,11 @@
           "count": 1,
           "params": {
             "strategy": "pump_dump",
-            "pumpQty": 20000,
-            "pumpDurationSec": 300,
-            "dumpDurationSec": 180,
-            "aggression": 0.85
+            "aggression": 0.9,
+            "wakeFreqMs": 200,
+            "pumpQty": 10000,
+            "pumpDurationSec": 150,
+            "dumpDurationSec": 120
           }
         },
         {
@@ -53,11 +55,11 @@
           "count": 2,
           "params": {
             "wakeFreqNs": 150000000,
-            "levels": 8,
+            "levels": 6,
             "levelQty": 800,
-            "baseSpread": 70,
+            "baseSpread": 90,
             "alphaVol": 1.0,
-            "stepBetweenLevels": 25,
+            "stepBetweenLevels": 30,
             "priceHysteresisCents": 8,
             "invSkewCentsPerQty": 0.002
           }
@@ -82,19 +84,22 @@
             "sigmaN": 10000,
             "sigmaS": 90000,
             "lambdaA": 5.0,
-            "percentAggr": 0.2,
+            "percentAggr": 0.28,
             "size": 150,
             "levels": 2,
-            "levelQty": 140
+            "levelQty": 120
           }
         },
         {
           "type": "TradeAgent",
           "count": 1,
           "params": {
-            "thresholdBp": 7,
+            "wakeFreqNs": 140000000,
+            "thresholdBp": 5,
             "signalQty": 120,
-            "wakeFreqNs": 140000000
+            "passiveLevels": 2,
+            "passiveStep": 20,
+            "passiveQty": 60
           }
         }
       ]
