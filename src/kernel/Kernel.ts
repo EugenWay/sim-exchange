@@ -89,6 +89,7 @@ export class Kernel {
   }
 
   broadcast(type: MsgType, body: any, extraDelayNs = 0) {
+    this.emit({ type, ...body });
     const from = this.exchangeId;
     for (const a of this.agents) {
       const to = a.id;
